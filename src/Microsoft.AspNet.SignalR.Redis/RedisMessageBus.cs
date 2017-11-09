@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNet.SignalR.Messaging;
 using Microsoft.AspNet.SignalR.Tracing;
+using System.Linq;
 
 namespace Microsoft.AspNet.SignalR.Redis
 {
@@ -24,6 +25,7 @@ namespace Microsoft.AspNet.SignalR.Redis
         private readonly TraceSource _trace;
         private readonly ITraceManager _traceManager;
         private readonly IMessageEncryptor _messageEncryptor;
+        private readonly IDependencyResolver _resolver;
 
         private IRedisConnection _connection;
         private string _connectionString;
@@ -46,7 +48,7 @@ namespace Microsoft.AspNet.SignalR.Redis
             }
 
             _connection = connection;
-
+            _resolver = resolver;
             _connectionString = configuration.ConnectionString;
             _db = configuration.Database;
             _key = configuration.EventKey;
@@ -77,16 +79,36 @@ namespace Microsoft.AspNet.SignalR.Redis
             Open(streamIndex);
         }
 
-        protected override Task Send(int streamIndex, IList<Message> messages)
+        protected override async Task Send(int streamIndex, IList<Message> messages)
         {
-            return _connection.ScriptEvaluateAsync(
-                _db,
-                @"local newId = redis.call('INCR', KEYS[1])
+            try
+            {
+                var number = Enumerable.Range(0, 5).OrderBy(i => Guid.NewGuid()).First();
+                if (number % 2 == 0)
+                {
+                    throw new Exception();
+                }
+
+                await _connection.ScriptEvaluateAsync(
+                    _db,
+                    @"local newId = redis.call('INCR', KEYS[1])
                   local payload = newId .. ' ' .. ARGV[1]
                   redis.call('PUBLISH', KEYS[1], payload)
                   return {newId, ARGV[1], payload}",
-                _key,
-                RedisMessage.ToBytes(_messageEncryptor, messages));
+                    _key,
+                    RedisMessage.ToBytes(_messageEncryptor, messages));
+            }
+            catch (Exception)
+            {
+                _trace.TraceWarning(nameof(RedisMessageBus) + " failed to send message, reconnecting and retrying");
+                // dispose current connection
+                // re-establish current connection, this should force connection to master
+                // re-send
+                //_connection.Dispose();
+                _connection = new RedisConnection(_resolver);
+                await ConnectWithRetry();
+                await Send(streamIndex, messages);
+            }
         }
 
         protected override void Dispose(bool disposing)

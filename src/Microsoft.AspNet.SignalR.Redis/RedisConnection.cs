@@ -15,10 +15,17 @@ namespace Microsoft.AspNet.SignalR.Redis
         private ConnectionMultiplexer _connection;
         private TraceSource _trace;
         private ulong _latestMessageId;
+        private bool _webFarmSupport;
 
         public RedisConnection(IDependencyResolver resolver)
         {
             _messageEncryptor = resolver.Resolve<IMessageEncryptor>();
+        }
+
+        public RedisConnection(IDependencyResolver resolver, bool webFarmSupport)
+        {
+            _messageEncryptor = resolver.Resolve<IMessageEncryptor>();
+            _webFarmSupport = webFarmSupport;
         }
 
         public async Task ConnectAsync(string connectionString, TraceSource trace)
@@ -91,7 +98,8 @@ namespace Microsoft.AspNet.SignalR.Redis
 
             return _connection.GetDatabase(database).ScriptEvaluateAsync(script,
                 keys,
-                arguments);
+                arguments,
+                _webFarmSupport ? CommandFlags.DemandMaster : CommandFlags.None);
         }
 
         public async Task RestoreLatestValueForKey(int database, string key)
@@ -112,7 +120,8 @@ namespace Microsoft.AspNet.SignalR.Redis
                          return nil
                      end",
                    new RedisKey[] { key },
-                   new RedisValue[] { _latestMessageId });
+                   new RedisValue[] { _latestMessageId },
+                   _webFarmSupport ? CommandFlags.DemandMaster : CommandFlags.None);
 
                 if (!redisResult.IsNull)
                 {
