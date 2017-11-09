@@ -81,34 +81,14 @@ namespace Microsoft.AspNet.SignalR.Redis
 
         protected override async Task Send(int streamIndex, IList<Message> messages)
         {
-            try
-            {
-                var number = Enumerable.Range(0, 5).OrderBy(i => Guid.NewGuid()).First();
-                if (number % 2 == 0)
-                {
-                    throw new Exception();
-                }
-
-                await _connection.ScriptEvaluateAsync(
-                    _db,
-                    @"local newId = redis.call('INCR', KEYS[1])
+            await _connection.ScriptEvaluateAsync(
+                _db,
+                @"local newId = redis.call('INCR', KEYS[1])
                   local payload = newId .. ' ' .. ARGV[1]
                   redis.call('PUBLISH', KEYS[1], payload)
                   return {newId, ARGV[1], payload}",
-                    _key,
-                    RedisMessage.ToBytes(_messageEncryptor, messages));
-            }
-            catch (Exception)
-            {
-                _trace.TraceWarning(nameof(RedisMessageBus) + " failed to send message, reconnecting and retrying");
-                // dispose current connection
-                // re-establish current connection, this should force connection to master
-                // re-send
-                //_connection.Dispose();
-                _connection = new RedisConnection(_resolver);
-                await ConnectWithRetry();
-                await Send(streamIndex, messages);
-            }
+                _key,
+                RedisMessage.ToBytes(_messageEncryptor, messages));
         }
 
         protected override void Dispose(bool disposing)
