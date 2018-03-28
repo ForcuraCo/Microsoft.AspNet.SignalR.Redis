@@ -53,6 +53,7 @@ namespace Microsoft.AspNet.SignalR.Redis
                 else
                 {
                     // We weren't disposed during the connection, so initialize it.
+                    _connection = connection;
                     if (!_connection.IsConnected)
                     {
                         _connection.Dispose();
@@ -93,7 +94,6 @@ namespace Microsoft.AspNet.SignalR.Redis
                 }
 
                 _connection.Dispose();
-
                 _disposed = true;
             }
         }
